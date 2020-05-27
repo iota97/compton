@@ -742,6 +742,10 @@ typedef struct _options_t {
   bool track_wdata;
   /// Whether compton needs to track window leaders.
   bool track_leader;
+
+  char *shader_path;
+  bool shader_need_time;
+
 } options_t;
 
 #ifdef CONFIG_VSYNC_OPENGL

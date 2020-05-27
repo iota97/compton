@@ -379,146 +379,44 @@ glx_on_root_change(session_t *ps) {
  */
 bool
 glx_init_blur(session_t *ps) {
-  assert(ps->o.blur_kerns[0]);
-
-  // Allocate PBO if more than one blur kernel is present
-  if (ps->o.blur_kerns[1]) {
-#ifdef CONFIG_VSYNC_OPENGL_FBO
-    // Try to generate a framebuffer
-    GLuint fbo = 0;
-    glGenFramebuffers(1, &fbo);
-    if (!fbo) {
-      printf_errf("(): Failed to generate Framebuffer. Cannot do "
-          "multi-pass blur with GLX backend.");
-      return false;
-    }
-    glDeleteFramebuffers(1, &fbo);
-#else
-    printf_errf("(): FBO support not compiled in. Cannot do multi-pass blur "
-        "with GLX backend.");
-    return false;
-#endif
-  }
 
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
-  {
-    char *lc_numeric_old = mstrcpy(setlocale(LC_NUMERIC, NULL));
-    // Enforce LC_NUMERIC locale "C" here to make sure decimal point is sane
-    // Thanks to hiciu for reporting.
-    setlocale(LC_NUMERIC, "C");
 
-    static const char *FRAG_SHADER_BLUR_PREFIX =
-      "#version 110\n"
-      "%s"
-      "uniform float offset_x;\n"
-      "uniform float offset_y;\n"
-      "uniform float factor_center;\n"
-      "uniform %s tex_scr;\n"
-      "\n"
-      "void main() {\n"
-      "  vec4 sum = vec4(0.0, 0.0, 0.0, 0.0);\n";
-    static const char *FRAG_SHADER_BLUR_ADD =
-      "  sum += float(%.7g) * %s(tex_scr, vec2(gl_TexCoord[0].x + offset_x * float(%d), gl_TexCoord[0].y + offset_y * float(%d)));\n";
-    static const char *FRAG_SHADER_BLUR_ADD_GPUSHADER4 =
-      "  sum += float(%.7g) * %sOffset(tex_scr, vec2(gl_TexCoord[0].x, gl_TexCoord[0].y), ivec2(%d, %d));\n";
-    static const char *FRAG_SHADER_BLUR_SUFFIX =
-      "  sum += %s(tex_scr, vec2(gl_TexCoord[0].x, gl_TexCoord[0].y)) * factor_center;\n"
-      "  gl_FragColor = sum / (factor_center + float(%.7g));\n"
-      "}\n";
+  glx_blur_pass_t *ppass = &ps->psglx->blur_passes[0];
 
-    const bool use_texture_rect = !ps->psglx->has_texture_non_power_of_two;
-    const char *sampler_type = (use_texture_rect ?
-        "sampler2DRect": "sampler2D");
-    const char *texture_func = (use_texture_rect ?
-        "texture2DRect": "texture2D");
-    const char *shader_add = FRAG_SHADER_BLUR_ADD;
-    char *extension = mstrcpy("");
-    if (use_texture_rect)
-      mstrextend(&extension, "#extension GL_ARB_texture_rectangle : require\n");
-    if (ps->o.glx_use_gpushader4) {
-      mstrextend(&extension, "#extension GL_EXT_gpu_shader4 : require\n");
-      shader_add = FRAG_SHADER_BLUR_ADD_GPUSHADER4;
+  char *shader_str = 0;
+  long length;
+  FILE *shader_file = fopen (ps->o.shader_path, "rb");
+
+  if (shader_file) {
+    fseek (shader_file, 0, SEEK_END);
+    length = ftell (shader_file);
+    fseek (shader_file, 0, SEEK_SET);
+    shader_str = malloc (length+1);
+    if (shader_str) {
+      fread (shader_str, 1, length, shader_file);
+      shader_str[length] = '\0';
     }
-
-    for (int i = 0; i < MAX_BLUR_PASS && ps->o.blur_kerns[i]; ++i) {
-      XFixed *kern = ps->o.blur_kerns[i];
-      if (!kern)
-        break;
-
-      glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
-
-      // Build shader
-      {
-        int wid = XFixedToDouble(kern[0]), hei = XFixedToDouble(kern[1]);
-        int nele = wid * hei - 1;
-        int len = strlen(FRAG_SHADER_BLUR_PREFIX) + strlen(sampler_type) + strlen(extension) + (strlen(shader_add) + strlen(texture_func) + 42) * nele + strlen(FRAG_SHADER_BLUR_SUFFIX) + strlen(texture_func) + 12 + 1;
-        char *shader_str = calloc(len, sizeof(char));
-        if (!shader_str) {
-          printf_errf("(): Failed to allocate %d bytes for shader string.", len);
-          return false;
-        }
-        {
-          char *pc = shader_str;
-          sprintf(pc, FRAG_SHADER_BLUR_PREFIX, extension, sampler_type);
-          pc += strlen(pc);
-          assert(strlen(shader_str) < len);
-
-          double sum = 0.0;
-          for (int j = 0; j < hei; ++j) {
-            for (int k = 0; k < wid; ++k) {
-              if (hei / 2 == j && wid / 2 == k)
-                continue;
-              double val = XFixedToDouble(kern[2 + j * wid + k]);
-              if (0.0 == val)
-                continue;
-              sum += val;
-              sprintf(pc, shader_add, val, texture_func, k - wid / 2, j - hei / 2);
-              pc += strlen(pc);
-              assert(strlen(shader_str) < len);
-            }
-          }
-
-          sprintf(pc, FRAG_SHADER_BLUR_SUFFIX, texture_func, sum);
-          assert(strlen(shader_str) < len);
-        }
-        ppass->frag_shader = glx_create_shader(GL_FRAGMENT_SHADER, shader_str);
-        free(shader_str);
-      }
-
-      if (!ppass->frag_shader) {
-        printf_errf("(): Failed to create fragment shader %d.", i);
-        return false;
-      }
-
-      // Build program
-      ppass->prog = glx_create_program(&ppass->frag_shader, 1);
-      if (!ppass->prog) {
-        printf_errf("(): Failed to create GLSL program.");
-        return false;
-      }
-
-      // Get uniform addresses
-#define P_GET_UNIFM_LOC(name, target) { \
-      ppass->target = glGetUniformLocation(ppass->prog, name); \
-      if (ppass->target < 0) { \
-        printf_errf("(): Failed to get location of %d-th uniform '" name "'. Might be troublesome.", i); \
-      } \
-    }
-
-      P_GET_UNIFM_LOC("factor_center", unifm_factor_center);
-      if (!ps->o.glx_use_gpushader4) {
-        P_GET_UNIFM_LOC("offset_x", unifm_offset_x);
-        P_GET_UNIFM_LOC("offset_y", unifm_offset_y);
-      }
+    fclose (shader_file);
+  }
+  else {
+    printf_errf("(): Failed to find shader %s", ps->o.shader_path);
+    return false;
+  }
+  ppass->frag_shader = glx_create_shader(GL_FRAGMENT_SHADER, shader_str);
+  free(shader_str);
+  if (!ppass->frag_shader) {
+    printf_errf("(): Failed to create fragment shader");
+    return false;
+  }
+  // Build program
+  ppass->prog = glx_create_program(&ppass->frag_shader, 1);
+  if (!ppass->prog) {
+    printf_errf("(): Failed to create GLSL program.");
+    return false;
+  }
 
 #undef P_GET_UNIFM_LOC
-    }
-    free(extension);
-
-    // Restore LC_NUMERIC
-    setlocale(LC_NUMERIC, lc_numeric_old);
-    free(lc_numeric_old);
-  }
 
 
   glx_check_err(ps);
@@ -1312,6 +1210,15 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
       glUniform1f(ppass->unifm_offset_y, texfac_y);
     if (ppass->unifm_factor_center >= 0)
       glUniform1f(ppass->unifm_factor_center, factor_center);
+
+    GLint loc = glGetUniformLocation(ppass->prog, "time");
+    if (loc != -1) {
+      ps->o.shader_need_time = true;
+      struct timeval tv;
+      gettimeofday(&tv, NULL);
+      float now = tv.tv_sec % SEC_WRAP * 1000 + tv.tv_usec / 1000;
+      glUniform1f(loc, now/1000.0f);
+    }
 
     {
       P_PAINTREG_START();

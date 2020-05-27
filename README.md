@@ -1,39 +1,4 @@
-# Compton
-
-[![Join the chat at https://gitter.im/chjj/compton](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/chjj/compton?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
-
-__Compton__ is a compositor for X, and a fork of __xcompmgr-dana__.
-
-I was frustrated by the low amount of standalone lightweight compositors.
-Compton was forked from Dana Jansens' fork of xcompmgr and refactored.  I fixed
-whatever bug I found, and added features I wanted. Things seem stable, but don't
-quote me on it. I will most likely be actively working on this until I get the
-features I want. This is also a learning experience for me. That is, I'm
-partially doing this out of a desire to learn Xlib.
-
-## Changes from xcompmgr:
-
-* OpenGL backend (`--backend glx`), in addition to the old X Render backend.
-* Inactive window transparency (`-i`) / dimming (`--inactive-dim`).
-* Titlebar/frame transparency (`-e`).
-* Menu transparency (`-m`, thanks to Dana).
-* shadows are now enabled for argb windows, e.g. terminals with transparency
-* removed serverside shadows (and simple compositing) to clean the code,
-  the only option that remains is clientside shadows
-* configuration files (see the man page for more details)
-* colored shadows (`--shadow-[red/green/blue]`)
-* a new fade system
-* VSync support (not always working)
-* Blur of background of transparent windows, window color inversion (bad in performance)
-* Some more options...
-
-## Fixes from the original xcompmgr:
-
-* fixed a segfault when opening certain window types
-* fixed a memory leak caused by not freeing up shadows (from the freedesktop
-  repo)
-* fixed the conflict with chromium and similar windows
-* [many more](https://github.com/chjj/compton/issues)
+# Compton with custom GLSL shader instead of blur effect
 
 ## Building
 
@@ -76,48 +41,27 @@ $ make docs
 $ make install
 ```
 
-(Compton does include a `_CMakeLists.txt` in the tree, but we haven't decided whether we should switch to CMake yet. The `Makefile` is fully usable right now.)
-
-## Known issues
-
-* Our [FAQ](https://github.com/chjj/compton/wiki/faq) covers some known issues.
-
-* VSync does not work too well. You may check the [VSync Guide](https://github.com/chjj/compton/wiki/vsync-guide) for how to get (possibly) better effects.
-
-* If `--unredir-if-possible` is enabled, when compton redirects/unredirects windows, the screen may flicker. Using `--paint-on-overlay` minimizes the problem from my observation, yet I do not know if there's a cure.
-
-* compton may not track focus correctly in all situations. The focus tracking code is experimental. `--use-ewmh-active-win` might be helpful.
-
-* The performance of blur under X Render backend might be pretty bad. OpenGL backend could be faster.
-
-* With `--blur-background` you may sometimes see weird lines around damaged area. `--resize-damage YOUR_BLUR_RADIUS` might be helpful in the case.
-
 ## Usage
 
-Please refer to the Asciidoc man pages (`man/compton.1.asciidoc` & `man/compton-trans.1.asciidoc`) for more details and examples.
+you may skip step 1 to 4 and use sample config ```compton.sample.conf```
 
-Note a sample configuration file `compton.sample.conf` is included in the repository.
+1) Set backend to glx in the config
+2) Enable blur in the config
+3) Set ```shader-path``` in the config
+4) Write your own shader or use the one in ```shaders``` folder
+5) Disable other running compositor
+6) Run with ```compton --config /path/to/config.conf -b```
 
-## Support
+## Previews
 
-* Bug reports and feature requests should go to the "Issues" section above.
+![bw](/previews/bw.png)
 
-* Our (semi?) official IRC channel is #compton on FreeNode.
+![boken](/previews/boken.png)
 
-* Some information is available on the wiki, including [FAQ](https://github.com/chjj/compton/wiki/faq), [VSync Guide](https://github.com/chjj/compton/wiki/vsync-guide), and [Performance Guide](https://github.com/chjj/compton/wiki/perf-guide).
+![rain](/previews/rain.gif)
 
-## License
+![1337](/previews/1337.png)
 
-Although compton has kind of taken on a life of its own, it was originally
-an xcompmgr fork. xcompmgr has gotten around. As far as I can tell, the lineage
-for this particular tree is something like:
+![abberation](/previews/abberation.png)
 
-* Keith Packard (original author)
-* Matthew Hawn
-* ...
-* Dana Jansens
-* chjj and richardgv
-
-Not counting the tens of people who forked it in between.
-
-Compton is distributed under MIT license, as far as I (richardgv) know. See LICENSE for more info.
+![pixelize](/previews/pixelize.png)

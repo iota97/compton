@@ -5488,6 +5488,33 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   // Get options from the configuration file. We don't do range checking
   // right now. It will be done later
 
+  if (config_lookup_string(&cfg, "shader-path", &sval)) {
+    if (sval[0] == '/') {
+      ps->o.shader_path = mstrcpy(sval);
+    }
+    else {
+      char *path1 = mstrcpy(path);
+      char *path2 = mstrcpy(sval);
+      char *path3 = mstrcpy(sval);
+      char *parent_dir = dirname(path1);
+      char *shader_dir = dirname(path2);
+      char *shader_file = basename(path3);
+      char buff[1024];
+      strcpy (buff, parent_dir);
+      strcat (buff, "/");
+      strcat (buff, shader_dir);
+      strcat (buff, "/");
+      strcat (buff, shader_file);
+      ps->o.shader_path = mstrcpy(buff);
+      free(path1);
+      free(path2);
+      free(path3);
+    }
+  }
+
+  // Update in opengl.c when we parse the shader
+  ps->o.shader_need_time = false;
+
   // -D (fade_delta)
   if (lcfg_lookup_int(&cfg, "fade-delta", &ival))
     ps->o.fade_delta = ival;
@@ -6830,6 +6857,9 @@ tmout_unredir_callback(session_t *ps, timeout_t *tmout) {
  */
 static bool
 mainloop(session_t *ps) {
+  if (ps->o.shader_need_time)
+    force_repaint(ps);
+
   // Don't miss timeouts even when we have a LOT of other events!
   timeout_run(ps);
 
