@@ -1216,7 +1216,7 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
       ps->o.shader_need_time = true;
       struct timeval tv;
       gettimeofday(&tv, NULL);
-      float now = tv.tv_sec % SEC_WRAP * 1000 + tv.tv_usec / 1000;
+      float now = tv.tv_sec % 1000 * 1000 + tv.tv_usec / 1000;
       glUniform1f(loc, now/1000.0f);
     }
 
